@@ -2,19 +2,22 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 import random
+import evaluate
 
 DEVICE = torch.device("cuda")
+HIDDEN_DIM = 384
+ROUGE = evaluate.load("rouge")
 
 
 class LstmPredictor(nn.Module):
-    def __init__(self, tokenizer, hidden_dim=128):
+    def __init__(self, tokenizer):
         super().__init__()
 
         vocab_size = tokenizer.vocab_size
-        self.embedding = nn.Embedding(vocab_size, hidden_dim)
-        self.rnn = nn.LSTM(hidden_dim, hidden_dim,
+        self.embedding = nn.Embedding(vocab_size, HIDDEN_DIM)
+        self.rnn = nn.LSTM(HIDDEN_DIM, HIDDEN_DIM,
                            batch_first=True, bidirectional=False)
-        out_dim = hidden_dim
+        out_dim = HIDDEN_DIM
         self.fc = nn.Linear(out_dim, vocab_size)
         self.to(DEVICE)
 
@@ -27,7 +30,10 @@ class LstmPredictor(nn.Module):
         return linear_out
 
 
-def evaluate(model, loader, criterion):
+def evaluate_(model, loader, criterion, tokenizer):
+    predictions = []
+    references = []
+
     model.eval()
     correct, total = 0, 0
     sum_loss = 0
@@ -39,14 +45,19 @@ def evaluate(model, loader, criterion):
             correct += (preds == y_batch).sum().item()
             total += y_batch.size(0)
             sum_loss += loss
+            predictions.append(tokenizer.decode(
+                preds, skip_special_tokens=True))
+            references.append(tokenizer.decode(
+                y_batch, skip_special_tokens=True))
 
     avg_loss = sum_loss / len(loader)
     accuracy = correct / total
-    return avg_loss, accuracy
+    rouge_score = ROUGE.compute(predictions=predictions, references=references)
+    return avg_loss, accuracy, rouge_score
 
 
-def train(model, n_epochs, train_loader, val_loader):
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.002)
+def train(model, n_epochs, l_rate, tokenizer, train_loader, val_loader):
+    optimizer = torch.optim.Adam(model.parameters(), lr=l_rate)
     criterion = nn.CrossEntropyLoss()
     for epoch in range(n_epochs):
         model.train()
@@ -60,26 +71,26 @@ def train(model, n_epochs, train_loader, val_loader):
             train_loss += loss.item()
 
         train_loss /= len(train_loader)
-        val_loss, val_acc = evaluate(model, val_loader, criterion)
+        val_loss, val_acc, val_rouge = evaluate_(
+            model, val_loader, criterion, tokenizer)
         print(
             f"Epoch {epoch+1} | Train Loss: {train_loss:.3f} | Val Loss: {val_loss:.3f} | Val Accuracy: {val_acc:.2%}")
+        print('ROUGE metrics')
+        for k, v in val_rouge.items():
+            print(f"{k}: {v:.4f}")
 
 
-def inference(model, val_loader, tokenizer):
+def inference(model, loader, tokenizer):
     model.eval()
     bad_cases, good_cases = [], []
     with torch.no_grad():
-        for x_batch, y_batch in val_loader:
-            x_batch, y_batch = x_batch, y_batch
+        for x_batch, y_batch in loader:
             logits = model(x_batch)
             preds = torch.argmax(logits, dim=1)
             for i in range(len(y_batch)):
-                input_tokens = tokenizer(
-                ).convert_ids_to_tokens(x_batch[i].tolist())
-                true_tok = tokenizer.convert_ids_to_tokens([
-                    y_batch[i].item()])[0]
-                pred_tok = tokenizer(
-                ).convert_ids_to_tokens([preds[i].item()])[0]
+                input_tokens = tokenizer.decode(x_batch[i].tolist())
+                true_tok = tokenizer.decode([y_batch[i].item()])
+                pred_tok = tokenizer.decode([preds[i].item()])
 
                 if preds[i] != y_batch[i]:
                     bad_cases.append((input_tokens, true_tok, pred_tok))
@@ -93,10 +104,10 @@ def inference(model, val_loader, tokenizer):
     print("\nSome incorrect predictions:")
     for context, true_tok, pred_tok in bad_cases_sampled:
         print(
-            f"Input: {' '.join(context)} | True: {true_tok} | Predicted: {pred_tok}")
+            f"Input: {context} | True: {true_tok} | Predicted: {pred_tok}")
 
     print("\nSome correct predictions:")
     for context, true_tok, pred_tok in good_cases_sampled:
         if true_tok == pred_tok:
             print(
-                f"Input: {' '.join(context)} | True: {true_tok} | Predicted: {pred_tok}")
+                f"Input: {context} | True: {true_tok} | Predicted: {pred_tok}")

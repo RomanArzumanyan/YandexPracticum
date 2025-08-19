@@ -1,5 +1,6 @@
 import re
 from sklearn.model_selection import train_test_split
+from tqdm import tqdm
 
 
 # Compile dataset cleanup patterns to make preprocessing faster.
@@ -20,16 +21,18 @@ def load_dataset(path: str, cap: int = -1) -> str:
     return dataset
 
 
-def clean_up(text: str) -> str:
-    text = text.lower()
-    for pattern in PATTERNS:
-        text = pattern.sub(' ', text)
+def clean_up(texts: list[str]) -> list[str]:
+    clean_texts = []
+    for text in tqdm(texts):
+        text = text.lower()
+        for pattern in PATTERNS:
+            text = pattern.sub(' ', text)
+        clean_texts.append(text.strip())
 
-    text = text.strip()
-    return text
+    return clean_texts
 
 
-def split_dataset(text: list[str]) -> list[list[str]]:
+def split_dataset(text: list[str]) -> dict:
     # train, validation and test subsets size
     _ = 0.8
     val = 0.1
@@ -45,4 +48,4 @@ def split_dataset(text: list[str]) -> list[list[str]]:
     print(f"validataion set len: {len(val_set)}")
     print(f"test set len:        {len(test_set)}")
 
-    return [train_set, val_set, test_set]
+    return {"train": train_set, "val": val_set, "test": test_set}
