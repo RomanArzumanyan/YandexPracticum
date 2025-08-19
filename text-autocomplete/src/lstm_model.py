@@ -3,6 +3,7 @@ import torch.nn as nn
 from tqdm import tqdm
 import random
 import evaluate
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 DEVICE = torch.device("cuda")
 HIDDEN_DIM = 384
@@ -15,22 +16,22 @@ class LstmPredictor(nn.Module):
 
         vocab_size = tokenizer.vocab_size
         self.embedding = nn.Embedding(vocab_size, HIDDEN_DIM)
-        self.rnn = nn.LSTM(HIDDEN_DIM, HIDDEN_DIM,
-                           batch_first=True, bidirectional=False)
+        self.rnn = nn.LSTM(HIDDEN_DIM, HIDDEN_DIM, batch_first=True)
         out_dim = HIDDEN_DIM
         self.fc = nn.Linear(out_dim, vocab_size)
         self.to(DEVICE)
 
-    def forward(self, x):
-        emb = self.embedding(x)
-        out, _ = self.rnn(emb)
-        position = x.size(1) - 1
-        hidden_forward = out[:, position, :out.size(2)]
-        linear_out = self.fc(hidden_forward)
-        return linear_out
+    def forward(self, contexts, lengths):
+        emb = self.embedding(contexts)
+        packed_emb = pack_padded_sequence(
+            emb, lengths, batch_first=True, enforce_sorted=False)
+        packed_output, hidden = self.rnn(packed_emb)
+        out = self.fc(hidden[-1]).squeeze(0)
+        return out
+        # return torch.argmax(out, 1)
 
 
-def evaluate_(model, loader, criterion, tokenizer):
+def evaluate_(model, loader, criterion, tokenizer, calc_rouge: bool = False):
     predictions = []
     references = []
 
@@ -38,21 +39,25 @@ def evaluate_(model, loader, criterion, tokenizer):
     correct, total = 0, 0
     sum_loss = 0
     with torch.no_grad():
-        for x_batch, y_batch in loader:
-            x_output = model(x_batch)
-            loss = criterion(x_output, y_batch)
-            preds = torch.argmax(x_output, dim=1)
-            correct += (preds == y_batch).sum().item()
-            total += y_batch.size(0)
+        for batch in loader:
+            inputs = batch['contexts']
+            lengths = batch['lengths']
+            tokens = torch.tensor(batch['tokens']).to(DEVICE)
+            pred_tokens = model(inputs, lengths)
+            loss = criterion(pred_tokens, tokens)
+            preds = torch.argmax(pred_tokens, dim=1)
+            correct += (preds == tokens).sum().item()
+            total += tokens.size(0)
             sum_loss += loss
             predictions.append(tokenizer.decode(
                 preds, skip_special_tokens=True))
             references.append(tokenizer.decode(
-                y_batch, skip_special_tokens=True))
+                tokens, skip_special_tokens=True))
 
     avg_loss = sum_loss / len(loader)
     accuracy = correct / total
-    rouge_score = ROUGE.compute(predictions=predictions, references=references)
+    rouge_score = ROUGE.compute(
+        predictions=predictions, references=references) if calc_rouge else None
     return avg_loss, accuracy, rouge_score
 
 
@@ -62,10 +67,13 @@ def train(model, n_epochs, l_rate, tokenizer, train_loader, val_loader):
     for epoch in range(n_epochs):
         model.train()
         train_loss = 0.
-        for x_batch, y_batch in tqdm(train_loader):
+        for batch in tqdm(train_loader):
+            inputs = batch['contexts']
+            lengths = batch['lengths']
+            tokens = torch.tensor(batch['tokens']).to(DEVICE)
             optimizer.zero_grad()
-            x_output = model(x_batch)
-            loss = criterion(x_output, y_batch)
+            pred_tokens = model(inputs, lengths)
+            loss = criterion(pred_tokens, tokens)
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
@@ -75,24 +83,29 @@ def train(model, n_epochs, l_rate, tokenizer, train_loader, val_loader):
             model, val_loader, criterion, tokenizer)
         print(
             f"Epoch {epoch+1} | Train Loss: {train_loss:.3f} | Val Loss: {val_loss:.3f} | Val Accuracy: {val_acc:.2%}")
-        print('ROUGE metrics')
-        for k, v in val_rouge.items():
-            print(f"{k}: {v:.4f}")
+
+        if (val_rouge):
+            print('ROUGE metrics')
+            for k, v in val_rouge.items():
+                print(f"{k}: {v:.4f}")
 
 
 def inference(model, loader, tokenizer):
     model.eval()
     bad_cases, good_cases = [], []
     with torch.no_grad():
-        for x_batch, y_batch in loader:
-            logits = model(x_batch)
+        for batch in loader:
+            inputs = batch['contexts']
+            lengths = batch['lengths']
+            tokens = batch['tokens']
+            logits = model(inputs, lengths)
             preds = torch.argmax(logits, dim=1)
-            for i in range(len(y_batch)):
-                input_tokens = tokenizer.decode(x_batch[i].tolist())
-                true_tok = tokenizer.decode([y_batch[i].item()])
+            for i in range(len(tokens)):
+                input_tokens = tokenizer.decode(inputs[i].tolist(), skip_special_tokens=True)
+                true_tok = tokenizer.decode([tokens[i].item()])
                 pred_tok = tokenizer.decode([preds[i].item()])
 
-                if preds[i] != y_batch[i]:
+                if preds[i] != tokens[i]:
                     bad_cases.append((input_tokens, true_tok, pred_tok))
                 else:
                     good_cases.append((input_tokens, true_tok, pred_tok))

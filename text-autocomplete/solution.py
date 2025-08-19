@@ -4,7 +4,7 @@ from src import data_utils, next_token_dataset, lstm_model
 TOKENIZER = next_token_dataset.TOKENIZER
 
 print(f"Load dataset \n")
-dataset = data_utils.load_dataset("data/raw_dataset.txt", cap=100000)
+dataset = data_utils.load_dataset("data/raw_dataset.txt", cap=10000)
 
 print(f"Clean dataset \n")
 clean = data_utils.clean_up(dataset)
