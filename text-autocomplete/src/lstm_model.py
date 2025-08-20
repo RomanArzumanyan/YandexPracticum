@@ -6,7 +6,7 @@ import evaluate
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 DEVICE = torch.device("cuda")
-HIDDEN_DIM = 384
+HIDDEN_DIM = 128
 ROUGE = evaluate.load("rouge")
 
 
@@ -28,7 +28,6 @@ class LstmPredictor(nn.Module):
         packed_output, hidden = self.rnn(packed_emb)
         out = self.fc(hidden[-1]).squeeze(0)
         return out
-        # return torch.argmax(out, 1)
 
 
 def evaluate_(model, loader, criterion, tokenizer, calc_rouge: bool = False):
@@ -61,7 +60,7 @@ def evaluate_(model, loader, criterion, tokenizer, calc_rouge: bool = False):
     return avg_loss, accuracy, rouge_score
 
 
-def train(model, n_epochs, l_rate, tokenizer, train_loader, val_loader):
+def train(model, n_epochs, l_rate, tokenizer, train_loader, val_loader) -> None:
     optimizer = torch.optim.Adam(model.parameters(), lr=l_rate)
     criterion = nn.CrossEntropyLoss()
     for epoch in range(n_epochs):
@@ -80,7 +79,7 @@ def train(model, n_epochs, l_rate, tokenizer, train_loader, val_loader):
 
         train_loss /= len(train_loader)
         val_loss, val_acc, val_rouge = evaluate_(
-            model, val_loader, criterion, tokenizer)
+            model, val_loader, criterion, tokenizer, True)
         print(
             f"Epoch {epoch+1} | Train Loss: {train_loss:.3f} | Val Loss: {val_loss:.3f} | Val Accuracy: {val_acc:.2%}")
 
@@ -90,7 +89,7 @@ def train(model, n_epochs, l_rate, tokenizer, train_loader, val_loader):
                 print(f"{k}: {v:.4f}")
 
 
-def inference(model, loader, tokenizer):
+def inference(model, loader, tokenizer, interactive=False) -> list[str]:
     model.eval()
     bad_cases, good_cases = [], []
     with torch.no_grad():
@@ -101,26 +100,35 @@ def inference(model, loader, tokenizer):
             logits = model(inputs, lengths)
             preds = torch.argmax(logits, dim=1)
             for i in range(len(tokens)):
-                input_tokens = tokenizer.decode(inputs[i].tolist(), skip_special_tokens=True)
+                input_tokens = tokenizer.decode(
+                    inputs[i].tolist(), skip_special_tokens=True)
                 true_tok = tokenizer.decode([tokens[i].item()])
                 pred_tok = tokenizer.decode([preds[i].item()])
 
-                if preds[i] != tokens[i]:
-                    bad_cases.append((input_tokens, true_tok, pred_tok))
+                if not interactive:
+                    if preds[i] != tokens[i]:
+                        bad_cases.append((input_tokens, true_tok, pred_tok))
+                    else:
+                        good_cases.append((input_tokens, true_tok, pred_tok))
                 else:
-                    good_cases.append((input_tokens, true_tok, pred_tok))
+                    good_cases.append(pred_tok)
 
-    random.seed(42)
-    bad_cases_sampled = random.sample(bad_cases, 5)
-    good_cases_sampled = random.sample(good_cases, 5)
+    if not interactive:
+        random.seed(42)
+        bad_cases_sampled = random.sample(bad_cases, 5)
+        good_cases_sampled = random.sample(good_cases, 5)
 
-    print("\nSome incorrect predictions:")
-    for context, true_tok, pred_tok in bad_cases_sampled:
-        print(
-            f"Input: {context} | True: {true_tok} | Predicted: {pred_tok}")
-
-    print("\nSome correct predictions:")
-    for context, true_tok, pred_tok in good_cases_sampled:
-        if true_tok == pred_tok:
+        print("\nSome incorrect predictions:")
+        for context, true_tok, pred_tok in bad_cases_sampled:
             print(
                 f"Input: {context} | True: {true_tok} | Predicted: {pred_tok}")
+
+        print("\nSome correct predictions:")
+        for context, true_tok, pred_tok in good_cases_sampled:
+            if true_tok == pred_tok:
+                print(
+                    f"Input: {context} | True: {true_tok} | Predicted: {pred_tok}")
+    else:
+        return good_cases
+
+    return []

@@ -20,7 +20,7 @@ class TwitterDataset(Dataset):
         for line in tqdm(texts):
             ret = tokenize_line(line)
             if ret:
-                self.samples.extend(ret)
+                self.samples.append(ret)
 
     def __len__(self):
         return len(self.samples)
@@ -33,7 +33,7 @@ class TwitterDataset(Dataset):
         }
 
 
-def tokenize_line(line: str) -> list[tuple[list[int], int]]:
+def tokenize_line(line: str) -> tuple[list[int], int]:
     token_ids = TOKENIZER.encode(
         line, add_special_tokens=False, max_length=MAX_LEN, truncation=True)
 
@@ -44,10 +44,10 @@ def tokenize_line(line: str) -> list[tuple[list[int], int]]:
     tail = min(len(token_ids), MAX_LEN) - 1
     context = token_ids[head:tail] + [TOKENIZER.mask_token_id]
     target = token_ids[tail]
-    return [(context, target)]
+    return context, target
 
 
-def collate(batch):
+def collate(batch) -> dict:
     contexts = [item['context'] for item in batch]
     tokens = [item['token'] for item in batch]
     lengths = [len(ctx) for ctx in contexts]
