@@ -3,11 +3,55 @@ import torch.nn as nn
 from tqdm import tqdm
 import random
 import evaluate
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from torch.nn.utils.rnn import pack_padded_sequence
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 
 DEVICE = torch.device("cuda")
 HIDDEN_DIM = 128
 ROUGE = evaluate.load("rouge")
+
+
+class DistilGPT2():
+    def __init__(self):
+        model_name = "distilgpt2"
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForCausalLM.from_pretrained(model_name)
+        self.generator = pipeline(
+            task="text-generation",
+            model=self.model,
+            tokenizer=self.tokenizer,
+            device=0
+        )
+
+    def autocomplete(self, prompt: str) -> str:
+        ret = self.generator(
+            prompt,
+            num_return_sequences=1,
+            do_sample=True,
+            top_p=0.95,
+            temperature=0.8,
+            num_workers=4
+        )[0]
+
+        prompt_len = len(prompt.split())
+        words = ret["generated_text"].split()
+        worlds_len = len(words)
+        return words[prompt_len if worlds_len > prompt_len else -1]
+
+    def inference(self, train_set: list[str]):
+        correct, total = 0, 0
+
+        for line in tqdm(train_set):
+            words = line.split()
+            context = ' '.join(words[0:-1])
+            target = words[-1]
+            pred = self.autocomplete(context)
+
+            total += 1
+            correct += 1 if pred == target else 0
+
+        accuracy = float(correct) / float(total)
+        print(f"Accuracy: {accuracy:.2%}")
 
 
 class LstmPredictor(nn.Module):

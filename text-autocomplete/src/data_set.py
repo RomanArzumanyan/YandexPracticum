@@ -10,7 +10,7 @@ BATCH_SIZE = 256
 # Min sentence length in tokens
 MIN_LEN = 4
 # Max sentence length in tokens
-MAX_LEN = 256
+MAX_LEN = 80
 
 
 class TwitterDataset(Dataset):
