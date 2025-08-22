@@ -1,4 +1,4 @@
-from src import data_utils, data_set, models
+from src import data_utils, data_set, lstm_model, transformer
 
 
 TOKENIZER = data_set.TOKENIZER
@@ -22,13 +22,30 @@ for split_name in splits:
     data_sets.append(dset)
     data_loaders.append(dloader)
 
+print(f"Inference with DistilGPT2 \n")
+
+gpt2 = transformer.DistilGPT2()
+gpt2.inference(splits["test"])
+
+while True:
+    user_input = input("Enter sentence, \"quit\" to exit: ")
+    if user_input == "quit":
+        break
+
+    num_tokens = max(1, len(user_input.split()) // 3)
+
+    for i in range(0, num_tokens):
+        clean = data_utils.clean_up([user_input])
+        user_input = user_input + " " + gpt2.autocomplete(user_input)
+    print(user_input)
+
 print(f"Train \n")
-lstm = models.LstmPredictor(TOKENIZER)
-models.train(lstm, n_epochs=3, l_rate=0.002, tokenizer=TOKENIZER,
-             train_loader=data_loaders[0], val_loader=data_loaders[1])
+lstm = lstm_model.Lstm(TOKENIZER)
+lstm_model.train(lstm, n_epochs=3, l_rate=0.002, tokenizer=TOKENIZER,
+                 train_loader=data_loaders[0], val_loader=data_loaders[1])
 
 print(f"Inference \n")
-models.inference(
+lstm_model.inference(
     lstm, loader=data_loaders[2], tokenizer=TOKENIZER)
 
 print(f"Autoregression. Model will predict last 25% of text. \n")
@@ -43,23 +60,6 @@ while True:
         clean = data_utils.clean_up([user_input])
         _, dloader = data_set.prepare_data(clean)
         user_input = user_input + " " + \
-            models.inference(lstm, loader=dloader,
-                             tokenizer=TOKENIZER, interactive=True)[-1]
-    print(user_input)
-
-print(f"Inference with DistilGPT2 \n")
-
-transformer = models.DistilGPT2()
-transformer.inference(splits["test"][0:50])
-
-while True:
-    user_input = input("Enter sentence, \"quit\" to exit: ")
-    if user_input == "quit":
-        break
-
-    num_tokens = max(1, len(user_input.split()) // 3)
-
-    for i in range(0, num_tokens):
-        clean = data_utils.clean_up([user_input])
-        user_input = user_input + " " + transformer.autocomplete(user_input)
+            lstm_model.inference(lstm, loader=dloader,
+                                 tokenizer=TOKENIZER, interactive=True)[-1]
     print(user_input)
