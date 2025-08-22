@@ -14,7 +14,7 @@ MAX_LEN = 80
 
 
 class TwitterDataset(Dataset):
-    def __init__(self, texts):
+    def __init__(self, texts, num_targets: int = 1):
         self.samples = []
 
         for line in tqdm(texts):
@@ -33,17 +33,16 @@ class TwitterDataset(Dataset):
         }
 
 
-def tokenize_line(line: str) -> tuple[list[int], int]:
+def tokenize_line(line: str, num_targets=1) -> tuple[list[int], int]:
     token_ids = TOKENIZER.encode(
         line, add_special_tokens=False, max_length=MAX_LEN, truncation=True)
 
     if len(token_ids) < MIN_LEN:
         return None
 
-    head = 0
-    tail = min(len(token_ids), MAX_LEN) - 1
-    context = token_ids[head:tail] + [TOKENIZER.mask_token_id]
-    target = token_ids[tail]
+    tail = min(len(token_ids), MAX_LEN) - num_targets
+    context = token_ids[:tail] + [TOKENIZER.mask_token_id]
+    target = token_ids[tail:] if num_targets > 0 else -1
     return context, target
 
 
@@ -59,7 +58,7 @@ def collate(batch) -> dict:
         'tokens': tokens}
 
 
-def prepare_data(text: list[str], shuffle: bool = False) -> tuple[TwitterDataset, DataLoader]:
+def prepare_data(text: list[str], shuffle: bool = False, num_targets: int = 1) -> tuple[TwitterDataset, DataLoader]:
     dataset = TwitterDataset(text)
     loader = DataLoader(dataset, batch_size=BATCH_SIZE,
                         shuffle=shuffle, collate_fn=collate)

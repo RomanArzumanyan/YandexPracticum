@@ -90,46 +90,16 @@ def train(model, n_epochs, l_rate, tokenizer, train_loader, val_loader) -> None:
                 print(f"{k}: {v:.4f}")
 
 
-def inference(model, loader, tokenizer, interactive=False) -> list[str]:
+def inference(model, loader, tokenizer) -> list[str]:
     model.eval()
-    bad_cases, good_cases = [], []
+    ret = []
     with torch.no_grad():
         for batch in loader:
             inputs = batch['contexts']
             lengths = batch['lengths']
-            tokens = batch['tokens']
             logits = model(inputs, lengths)
             preds = torch.argmax(logits, dim=1)
-            for i in range(len(tokens)):
-                input_tokens = tokenizer.decode(
-                    inputs[i].tolist(), skip_special_tokens=True)
-                true_tok = tokenizer.decode([tokens[i].item()])
+            for i in range(len(inputs)):
                 pred_tok = tokenizer.decode([preds[i].item()])
-
-                if not interactive:
-                    if preds[i] != tokens[i]:
-                        bad_cases.append((input_tokens, true_tok, pred_tok))
-                    else:
-                        good_cases.append((input_tokens, true_tok, pred_tok))
-                else:
-                    good_cases.append(pred_tok)
-
-    if not interactive:
-        random.seed(42)
-        bad_cases_sampled = random.sample(bad_cases, 5)
-        good_cases_sampled = random.sample(good_cases, 5)
-
-        print("\nSome incorrect predictions:")
-        for context, true_tok, pred_tok in bad_cases_sampled:
-            print(
-                f"Input: {context} | True: {true_tok} | Predicted: {pred_tok}")
-
-        print("\nSome correct predictions:")
-        for context, true_tok, pred_tok in good_cases_sampled:
-            if true_tok == pred_tok:
-                print(
-                    f"Input: {context} | True: {true_tok} | Predicted: {pred_tok}")
-    else:
-        return good_cases
-
-    return []
+                ret.append(pred_tok)
+    return ret
