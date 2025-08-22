@@ -35,30 +35,27 @@ class DistilGPT2():
         worlds_len = len(words)
         return words[prompt_len if worlds_len > prompt_len else -1]
 
-    def inference(self, train_set: list[str]):
-        correct = 0
+    def inference(self, train_set: list[str]) -> list[str]:
         data = []
         preds = []
+        clean = []
 
         for line in tqdm(train_set):
-            words = line.split()
-            context = ' '.join(words[0:-1])
-            target = words[-1]
             data.append({
-                'context': context,
-                'target': target,
-                'length': len(words[0:-1])
+                'context': line,
+                'length': len(line.split())
             })
 
         for ret in tqdm(self.generator(KeyDataset(Dataset.from_list(data), "context"), max_new_tokens=20, num_workers=2)):
-            words = ret[0]["generated_text"].split()
-            preds.append(words)
+            preds.append(ret[0]["generated_text"].split())
 
         for i in range(0, len(preds)):
-            target, prompt_len = data[i]['target'], data[i]['length']
-            pred_words = preds[i]
-            if pred_words[min(prompt_len, len(pred_words) - 1)] == target:
-                correct += 1
+            prompt_len = data[i]['length']
+            words = preds[i]
+            if prompt_len >= len(words):
+                # pipeline didn't autocomplete, that sometimes happen
+                clean.append('zzz')
+                continue
+            clean.append(words[prompt_len])
 
-        accuracy = float(correct) / float(len(data))
-        print(f"Accuracy: {accuracy:.2%}")
+        return clean

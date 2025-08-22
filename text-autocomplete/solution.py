@@ -7,7 +7,7 @@ NUM_TOK = 3
 ROUGE = lstm_model.ROUGE
 
 clean = data_utils.clean_up(data_utils.load_dataset(
-    "data/raw_dataset.txt", cap=100000))
+    "data/raw_dataset.txt", cap=5000))
 
 splits = data_utils.split_dataset(clean)
 
@@ -55,12 +55,12 @@ print('ROUGE metrics')
 for k, v in rouge_score.items():
     print(f"{k}: {v:.4f}")
 
-print(f"Inference with DistilGPT2 \n")
-
 gpt2 = transformer.DistilGPT2()
-gpt2.inference(splits["test"])
-
 for i in range(0, NUM_TOK):
-    _, dloader = data_set.prepare_data(lstm_split, shuffle=False, num_targets=0)
-    preds = lstm_model.inference(lstm, loader=dloader, tokenizer=TOKENIZER)
-    lstm_split = [x + ' ' + y for x, y in zip(lstm_split, preds)]
+    preds = gpt2.inference(gpt2_split)
+    gpt2_split = [x + ' ' + y for x, y in zip(gpt2_split, preds)]
+
+rouge_score = ROUGE.compute(predictions=gpt2_split, references=true_split)
+print('ROUGE metrics')
+for k, v in rouge_score.items():
+    print(f"{k}: {v:.4f}")
