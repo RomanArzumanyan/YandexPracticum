@@ -1,6 +1,7 @@
 import re
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
+import requests
 
 
 # Compile dataset cleanup patterns to make preprocessing faster.
@@ -14,7 +15,32 @@ PATTERNS = [
 ]
 
 
+def download_from_url(url: str, filename: str) -> None:
+    """
+    Download file.
+
+    Args:
+        url (str): input URL
+        filename (str): destination path
+    """
+    response = requests.get(url, stream=True)
+    response.raise_for_status()
+    with open(filename, 'wb') as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            f.write(chunk)
+
+
 def load_dataset(path: str, cap: int = -1) -> str:
+    """
+    Load dataset from file
+
+    Args:
+        path (str): filepath
+        cap (int, optional): number of string to read. Defaults to -1.
+
+    Returns:
+        str: string with text
+    """
     with open(path, "r") as f_in:
         dataset = [f_in.readline() for i in range(0, cap)] if cap > 0 else [
             line for line in f_in]
@@ -22,6 +48,15 @@ def load_dataset(path: str, cap: int = -1) -> str:
 
 
 def clean_up(texts: list[str]) -> list[str]:
+    """
+    Cleanup dataset, leaving only alphanumericals
+
+    Args:
+        texts (list[str]): list of sentences
+
+    Returns:
+        list[str]: list of "clean" sentences
+    """
     clean_texts = []
     for text in tqdm(texts):
         text = text.lower()
@@ -33,6 +68,15 @@ def clean_up(texts: list[str]) -> list[str]:
 
 
 def split_dataset(text: list[str]) -> dict:
+    """
+    Split dataset into 3 parts: train, val, test
+
+    Args:
+        text (list[str]): dataset
+
+    Returns:
+        dict: dictionary with 3 datasets
+    """
     # train, validation and test subsets size
     _ = 0.8
     val = 0.1

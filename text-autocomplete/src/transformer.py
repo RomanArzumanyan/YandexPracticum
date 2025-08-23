@@ -5,6 +5,10 @@ from tqdm import tqdm
 
 
 class DistilGPT2():
+    """
+    Class with distilgpt2 text generation pipeline
+    """
+
     def __init__(self):
         model_name = "distilgpt2"
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -21,6 +25,15 @@ class DistilGPT2():
         )
 
     def autocomplete(self, prompt: str) -> str:
+        """
+        Predict single word
+
+        Args:
+            prompt (str): prompt
+
+        Returns:
+            str: predicted word
+        """
         ret = self.generator(
             prompt,
             num_return_sequences=1,
@@ -36,11 +49,20 @@ class DistilGPT2():
         return words[prompt_len if worlds_len > prompt_len else -1]
 
     def inference(self, train_set: list[str]) -> list[str]:
+        """
+        Predict 1 word for every given sentence
+
+        Args:
+            train_set (list[str]): list of prompts to autocomplete
+
+        Returns:
+            list[str]: list of prompts + predictions
+        """
         data = []
         preds = []
         clean = []
 
-        for line in tqdm(train_set):
+        for line in train_set:
             data.append({
                 'context': line,
                 'length': len(line.split())
