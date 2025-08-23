@@ -149,3 +149,12 @@ class Lstm(nn.Module):
                     pred_tok = tokenizer.decode([preds[i].item()])
                     ret.append(pred_tok)
         return ret
+
+    def save(self, path: str) -> None:
+        """
+        Save model state
+
+        Args:
+            path (str): path to output
+        """
+        torch.save(self.state_dict(), path)
