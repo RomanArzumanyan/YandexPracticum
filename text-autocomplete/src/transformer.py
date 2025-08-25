@@ -3,6 +3,10 @@ from datasets import Dataset
 from transformers.pipelines.pt_utils import KeyDataset
 from tqdm import tqdm
 
+# Max sentence length in tokens
+MAX_LEN = 80
+BATCH_SIZE = 256
+
 
 class DistilGPT2():
     """
@@ -12,41 +16,20 @@ class DistilGPT2():
     def __init__(self):
         model_name = "distilgpt2"
         self.tokenizer = AutoTokenizer.from_pretrained(
-            model_name, padding_side='left')
-        self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-        self.tokenizer.pad_token_id = self.tokenizer.convert_tokens_to_ids(
-            '[PAD]')
+            model_name, truncation=True, padding_side="left",
+            padding="max_length", max_length=MAX_LEN)
+
+        self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+
         self.model = AutoModelForCausalLM.from_pretrained(model_name)
+
         self.generator = pipeline(
             task="text-generation",
             model=self.model,
             tokenizer=self.tokenizer,
             device=0,
+            batch_size=BATCH_SIZE
         )
-
-    def autocomplete(self, prompt: str) -> str:
-        """
-        Predict single word
-
-        Args:
-            prompt (str): prompt
-
-        Returns:
-            str: predicted word
-        """
-        ret = self.generator(
-            prompt,
-            num_return_sequences=1,
-            do_sample=True,
-            top_p=0.95,
-            temperature=0.8,
-            max_length=80,
-        )[0]
-
-        prompt_len = len(prompt.split())
-        words = ret["generated_text"].split()
-        worlds_len = len(words)
-        return words[prompt_len if worlds_len > prompt_len else -1]
 
     def inference(self, train_set: list[str]) -> list[str]:
         """
@@ -68,7 +51,7 @@ class DistilGPT2():
                 'length': len(line.split())
             })
 
-        for ret in tqdm(self.generator(KeyDataset(Dataset.from_list(data), "context"), max_new_tokens=20, num_workers=2)):
+        for ret in tqdm(self.generator(KeyDataset(Dataset.from_list(data), "context"), max_new_tokens=20)):
             preds.append(ret[0]["generated_text"].split())
 
         for i in range(0, len(preds)):
