@@ -150,7 +150,7 @@ class Lstm(nn.Module):
                     ret.append(pred_tok)
         return ret
 
-    def save(self, path: str) -> None:
+    def save_state_dict(self, path: str) -> None:
         """
         Save model state
 
@@ -158,3 +158,12 @@ class Lstm(nn.Module):
             path (str): path to output
         """
         torch.save(self.state_dict(), path)
+
+    def save(self, path: str) -> None:
+        """
+        Save entire model
+
+        Args:
+            path (str): path to output
+        """
+        torch.save(self, path)
