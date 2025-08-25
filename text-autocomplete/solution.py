@@ -28,6 +28,7 @@ for split in [splits['train'], splits['val']]:
 lstm = lstm_model.Lstm(TOKENIZER)
 lstm.train_model(n_epochs=3, l_rate=0.002, tokenizer=TOKENIZER,
                  train_loader=data_loaders[0], val_loader=data_loaders[1])
+lstm.save("models/lstm.pth")
 
 
 NUM_WORDS = 3
@@ -45,11 +46,14 @@ for i in range(0, len(splits['test'])):
     context = ' '.join(words[:ctx_len])
     target = ' '.join(words[ctx_len:])
     lstm_data.append(context)
-    true_data.append(context + ' ' + target)
+    true_data.append(target)
 
 # Данные для инференса трансформера будут точно такие же, делаем копию.
 gpt2_data = lstm_data
 
+
+# Здесь храним только предсказанные слова.
+pred_data = [""] * len(lstm_data)
 
 # Проходимся по всему датасету и генерируем массив предсказанных слов.
 # Далее, прибавляем предсказанное слово ко входам.
@@ -58,32 +62,38 @@ for i in range(0, NUM_WORDS):
         lstm_data, shuffle=False, num_targets=0)
     preds = lstm.inference(loader=dloader, tokenizer=TOKENIZER)
     lstm_data = [x + ' ' + y for x, y in zip(lstm_data, preds)]
+    pred_data = [x + ' ' + y for x, y in zip(pred_data, preds)]
 
-rouge_score = ROUGE.compute(predictions=lstm_data, references=true_data)
+rouge_score = ROUGE.compute(predictions=pred_data, references=true_data)
 print('ROUGE metrics')
 for k, v in rouge_score.items():
     print(f"{k}: {v:.4f}")
 
+
+pred_data = [""] * len(lstm_data)
+GPT2_CAP=100
+gpt2_data = gpt2_data[:GPT2_CAP]
 
 gpt2 = transformer.DistilGPT2()
 for i in range(0, NUM_WORDS):
     preds = gpt2.inference(gpt2_data)
     gpt2_data = [x + ' ' + y for x, y in zip(gpt2_data, preds)]
+    pred_data = [x + ' ' + y for x, y in zip(pred_data, preds)]
 
-rouge_score = ROUGE.compute(predictions=gpt2_data, references=true_data)
+rouge_score = ROUGE.compute(predictions=pred_data, references=true_data[:GPT2_CAP])
 print('ROUGE metrics')
 for k, v in rouge_score.items():
     print(f"{k}: {v:.4f}")
 
 
-print("Some LSTM predictions:")
+print("\nSome LSTM predictions:")
 for i in range(0, 3):
     print(lstm_data[i])
 
-print("Some GPT2 predictions:")
+print("\nSome GPT2 predictions:")
 for i in range(0, 3):
     print(gpt2_data[i])
 
-print("Actual sentences:")
+print("\nActual sentences:")
 for i in range(0, 3):
     print(true_data[i])
