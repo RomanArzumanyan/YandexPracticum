@@ -67,26 +67,31 @@ def clean_up(texts: list[str]) -> list[str]:
     return clean_texts
 
 
-def split_dataset(text: list[str]) -> dict:
+def split_dataset(
+        text: list[str],
+        train: float = 0.8,
+        val: float = 0.1,
+        test: float = 0.1) -> dict:
     """
     Split dataset into 3 parts: train, val, test
-
-    Args:
-        text (list[str]): dataset
 
     Returns:
         dict: dictionary with 3 datasets
     """
-    # train, validation and test subsets size
-    _ = 0.8
-    val = 0.1
-    test = 0.1
+    assert (train + val + test == 1.0)
+    assert (train * val * test > 0.0)
 
+    # Split into [train] and [val + train]
+    a = train
+    b = 1 - a
     train_set, val_set = train_test_split(
-        text, test_size=val + test, random_state=42)
+        text, test_size=b, train_size=a, random_state=42)
 
+    # Split [val + train] into [val] and [train]
+    a = val / (val + test)
+    b = 1 - a
     val_set, test_set = train_test_split(
-        val_set, test_size=0.5, random_state=42)
+        val_set, test_size=b, train_size=a, random_state=42)
 
     print(f"train set len:       {len(train_set)}")
     print(f"validataion set len: {len(val_set)}")

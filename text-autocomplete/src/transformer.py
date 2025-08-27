@@ -2,10 +2,12 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 from datasets import Dataset
 from transformers.pipelines.pt_utils import KeyDataset
 from tqdm import tqdm
+import torch
 
 # Max sentence length in tokens
 MAX_LEN = 80
 BATCH_SIZE = 256
+DEVICE = 0 if torch.cuda.is_available() else -1
 
 
 class DistilGPT2():
@@ -27,7 +29,7 @@ class DistilGPT2():
             task="text-generation",
             model=self.model,
             tokenizer=self.tokenizer,
-            device=0,
+            device=DEVICE,
             batch_size=BATCH_SIZE
         )
 

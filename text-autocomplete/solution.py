@@ -31,9 +31,9 @@ splits = data_utils.split_dataset(clean)
 data_sets = []
 data_loaders = []
 for split in [splits['train'], splits['val']]:
-    dset, dloader = data_set.prepare_data(split)
+    dset = data_set.TwitterDataset(split)
     data_sets.append(dset)
-    data_loaders.append(dloader)
+    data_loaders.append(dset.get_loader())
 
 # %% [markdown]
 # Обучаем LSTM модель
@@ -97,9 +97,8 @@ pred_data = [""] * len(lstm_data)
 # Проходимся по всему датасету и генерируем массив предсказанных слов.
 # Далее, прибавляем предсказанное слово ко входам.
 for i in range(0, NUM_WORDS):
-    _, dloader = data_set.prepare_data(
-        lstm_data, shuffle=False, num_targets=0)
-    preds = lstm.inference(loader=dloader, tokenizer=TOKENIZER)
+    dataset = data_set.TwitterDataset(lstm_data, shuffle=False, num_targets=0)
+    preds = lstm.inference(loader=dataset.get_loader(), tokenizer=TOKENIZER)
     lstm_data = [x + ' ' + y for x, y in zip(lstm_data, preds)]
     pred_data = [x + ' ' + y for x, y in zip(pred_data, preds)]
 
@@ -110,20 +109,9 @@ for k, v in rouge_score.items():
 
 # %% [markdown]
 # Аналогичная процедура для трансформера.
-# 
-# Использование `batch_size`, отличного от 1 приводит к исключению
-# 
-# ```
-# /pytorch/aten/src/ATen/native/cuda/Indexing.cu:1553: indexSelectLargeIndex: block: [78,0,0], thread: [95,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
-# ```
-# 
-# Которое воспроизводится на ВМ и на моём ноутбуке, поэтому сильно уменьшим размер датасета. \
-# Т. к. модель уже обучена, качество результата не изменится.
 
 # %%
 pred_data = [""] * len(lstm_data)
-GPT2_CAP=100
-gpt2_data = gpt2_data[:GPT2_CAP]
 
 gpt2 = transformer.DistilGPT2()
 for i in range(0, NUM_WORDS):
@@ -131,7 +119,7 @@ for i in range(0, NUM_WORDS):
     gpt2_data = [x + ' ' + y for x, y in zip(gpt2_data, preds)]
     pred_data = [x + ' ' + y for x, y in zip(pred_data, preds)]
 
-rouge_score = ROUGE.compute(predictions=pred_data, references=true_preds[:GPT2_CAP])
+rouge_score = ROUGE.compute(predictions=pred_data, references=true_preds)
 print('ROUGE metrics')
 for k, v in rouge_score.items():
     print(f"{k}: {v:.4f}")

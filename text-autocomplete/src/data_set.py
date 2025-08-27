@@ -5,39 +5,13 @@ from tqdm import tqdm
 from torch.nn.utils.rnn import pad_sequence
 
 TOKENIZER = BertTokenizerFast.from_pretrained("bert-base-uncased")
-DEVICE = torch.device("cuda")
+DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 BATCH_SIZE = 256
-# Min sentence length in tokens
 MIN_LEN = 4
-# Max sentence length in tokens
 MAX_LEN = 80
 
 
-class TwitterDataset(Dataset):
-    """
-    Torch dataset
-    """
-
-    def __init__(self, texts, num_targets: int = 1):
-        self.samples = []
-
-        for line in tqdm(texts):
-            ret = tokenize_line(line, num_targets)
-            if ret:
-                self.samples.append(ret)
-
-    def __len__(self):
-        return len(self.samples)
-
-    def __getitem__(self, idx):
-        x, y = self.samples[idx]
-        return {
-            'context': torch.tensor(x, dtype=torch.long).to(DEVICE),
-            'token': torch.tensor(y, dtype=torch.long).to(DEVICE)
-        }
-
-
-def tokenize_line(line: str, num_targets=1) -> tuple[list[int], int]:
+def tokenize(line: str, num_targets: int = 1) -> tuple[list[int], int]:
     """
     Tokenize sentence
 
@@ -48,10 +22,13 @@ def tokenize_line(line: str, num_targets=1) -> tuple[list[int], int]:
     Returns:
         tuple[list[int], int]: tuple, first element is tokenized context, second is tokenized target.
     """
+    assert (num_targets >= 0)
+
     token_ids = TOKENIZER.encode(
         line, add_special_tokens=False, max_length=MAX_LEN, truncation=True)
+    tok_len = len(token_ids)
 
-    if len(token_ids) < MIN_LEN:
+    if (tok_len < MIN_LEN) or (tok_len > MAX_LEN) or (num_targets >= tok_len):
         return None
 
     tail = min(len(token_ids), MAX_LEN) - num_targets
@@ -63,9 +40,6 @@ def tokenize_line(line: str, num_targets=1) -> tuple[list[int], int]:
 def collate(batch) -> dict:
     """
     Custom collate function
-
-    Args:
-        batch (_type_): dataset batch
 
     Returns:
         dict: dictionary with padded context, lengths of contexts and target tokens.
@@ -81,19 +55,31 @@ def collate(batch) -> dict:
         'tokens': tokens}
 
 
-def prepare_data(text: list[str], shuffle: bool = False, num_targets: int = 1) -> tuple[TwitterDataset, DataLoader]:
+class TwitterDataset(Dataset):
     """
-    Prepare dataset and data loader
-
-    Args:
-        text (list[str]): dataset as list of sentences.
-        shuffle (bool, optional): shuffle the data. Defaults to False.
-        num_targets (int, optional): number of tokens to take as prediction targets. Defaults to 1.
-
-    Returns:
-        tuple[TwitterDataset, DataLoader]: tuple, first element is dataset, second is data loader.
+    Torch dataset
     """
-    dataset = TwitterDataset(text)
-    loader = DataLoader(dataset, batch_size=BATCH_SIZE,
-                        shuffle=shuffle, collate_fn=collate)
-    return dataset, loader
+
+    def __init__(self, texts, num_targets: int = 1, shuffle: bool = False):
+        self.samples = []
+
+        for line in tqdm(texts):
+            ret = tokenize(line, num_targets)
+            if ret:
+                self.samples.append(ret)
+
+        self.loader = DataLoader(
+            self, batch_size=BATCH_SIZE, shuffle=shuffle, collate_fn=collate)
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        x, y = self.samples[idx]
+        return {
+            'context': torch.tensor(x, dtype=torch.long).to(DEVICE),
+            'token': torch.tensor(y, dtype=torch.long).to(DEVICE)
+        }
+
+    def get_loader(self):
+        return self.loader
