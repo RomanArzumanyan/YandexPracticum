@@ -1,7 +1,7 @@
 # %%
 from torchsummary import summary
 from torchvision.datasets import ImageFolder
-from torchvision.transforms.v2 import Resize, RandomRotation, Compose, RandomVerticalFlip, RandomHorizontalFlip
+from torchvision.transforms.v2 import Resize, Compose
 from torchvision.transforms import Normalize
 from torch.utils.data import DataLoader
 import torch
@@ -11,7 +11,6 @@ from sklearn.metrics import classification_report
 import torchvision.models as models
 from matplotlib import pyplot as plt
 import data_utils as du
-from ultralytics import YOLO
 from tqdm import tqdm
 
 # %% [markdown]
@@ -89,9 +88,6 @@ target_h = 224
 train_transforms = Compose([
     Resize((target_w, target_h)),
     Normalize(mean, std),
-    RandomRotation([-5, 5], fill=255.),
-    RandomVerticalFlip(p=0.5),
-    RandomHorizontalFlip(p=0.5)
 ])
 
 val_transforms = Compose([
@@ -156,7 +152,7 @@ criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.002)
 
 
-def train_one_epoch(epoch_index):
+def train_one_epoch():
     running_loss = 0.
     avg_loss = 0.
 
@@ -177,7 +173,7 @@ def train_one_epoch(epoch_index):
 # %%
 # Почему столько ?
 # Подобрано экспериментально. При большем числе эпох ошибка уже  не уменьшается.
-EPOCHS = 20
+EPOCHS = 15
 best_vloss = 1e5
 
 for epoch in range(EPOCHS):

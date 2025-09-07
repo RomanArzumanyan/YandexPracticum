@@ -7,14 +7,13 @@ import torch
 from tqdm import tqdm
 import numpy as np
 
-model_yolo = YOLO("yolo12n.pt")
-
 
 def clean_up(dataset, device, path) -> tuple[list, list]:
     if os.path.isdir(path):
         print(f"Skip cleanup because {path} already exists")
         return None, None
 
+    model_yolo = YOLO("yolo12n.pt")
     model_yolo.to(device)
 
     mean, std_dev = [0., 0., 0.], [0., 0., 0.]
@@ -75,14 +74,3 @@ class OgyeivDataset(Dataset):
         x, y = self.dataset[idx]
         x = self.to_tensor(x).to(self.device)
         return self.transforms(x), y
-
-
-dataset_path = '/home/vlabs/Documents/Yandex_Practicum_ML_CV/sprint_3/theme_4/lesson_1/ogyeiv2'
-train_dataset = ImageFolder(dataset_path + '/train')
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-mean, std = clean_up(
-    train_dataset,
-    device,
-    "/home/vlabs/Documents/Yandex_Practicum_ML_CV/sprint_3/theme_4/lesson_1/deleteme")
-print(f"mean: {mean}, std: {std}")
