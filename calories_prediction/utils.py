@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 import torchmetrics
 
@@ -46,7 +47,10 @@ def set_requires_grad(module: nn.Module, unfreeze_pattern="", verbose=False):
 class MultimodalModel(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.text_model = AutoModel.from_pretrained(config.TEXT_MODEL_NAME)
+
+        self.text_model = AutoModel.from_pretrained(
+            config.TEXT_MODEL_NAME)
+
         self.image_model = timm.create_model(
             config.IMAGE_MODEL_NAME,
             pretrained=True,
@@ -55,15 +59,16 @@ class MultimodalModel(nn.Module):
 
         self.text_proj = nn.Linear(
             self.text_model.config.hidden_size, config.HIDDEN_DIM)
+
         self.image_proj = nn.Linear(
             self.image_model.num_features, config.HIDDEN_DIM)
 
         self.regression = nn.Sequential(
-            nn.Linear(config.HIDDEN_DIM, config.HIDDEN_DIM // 2),
-            nn.LayerNorm(config.HIDDEN_DIM // 2),
+            nn.Linear(config.HIDDEN_DIM, config.HIDDEN_DIM),
+            nn.LayerNorm(config.HIDDEN_DIM),
             nn.ReLU(),
             nn.Dropout(0.15),
-            nn.Linear(config.HIDDEN_DIM // 2, config.NUM_CLASSES)
+            nn.Linear(config.HIDDEN_DIM, 1)
         )
 
     def forward(self, input_ids, attention_mask, image, mass):
@@ -75,14 +80,13 @@ class MultimodalModel(nn.Module):
         image_emb = self.image_proj(image_features)
 
         fused_emb = text_emb * image_emb
-        for i in range(0, fused_emb.shape[0]):
-            fused_emb[i] *= mass[i]
 
         logits = self.regression(fused_emb)
         return logits
 
 
-def train(config, device):
+def train(config):
+    device = config.DEVICE
     seed_everything(config.SEED)
 
     # Инициализация модели
@@ -106,6 +110,8 @@ def train(config, device):
         'lr': config.REGR_LR
     }])
 
+    # TODO: Можно ли использовать несколько разных лоссов ?
+    # Для МАЕ, насколько я понимаю, подходит L1.
     criterion = nn.L1Loss()
 
     # Загрузка данных
@@ -128,6 +134,7 @@ def train(config, device):
     mae_train = torchmetrics.MeanAbsoluteError().to(device)
     mae_val = torchmetrics.MeanAbsoluteError().to(device)
     best_mae_val = 1e5
+    epochs_without_improvement = 0
 
     print("training started")
     for epoch in range(config.EPOCHS):
@@ -155,9 +162,11 @@ def train(config, device):
 
             total_loss += loss.item()
 
-            # predicted = logits.argmax(dim=1)
+            # Умножаем на массу чтобы получить МАЕ в абсолютных величинах
             predicted = logits
-            _ = mae_train(preds=predicted, target=labels)
+            _ = mae_train(
+                preds=predicted * inputs['mass'],
+                target=labels * inputs['mass'])
 
         # Валидация
         train_mae = mae_train.compute().cpu().numpy()
@@ -173,6 +182,14 @@ def train(config, device):
             print(f"New best model, epoch: {epoch}")
             best_mae_val = val_mae
             torch.save(model.state_dict(), config.PTH_PATH)
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
+
+        if epochs_without_improvement == config.EPOCHS_WITHOUT_IMPROVEMENT:
+            print(
+                f"Learning has reached plateau of {epochs_without_improvement} epochs without improvement.")
+            break
 
 
 def validate(model, val_loader, device, metric):
@@ -189,8 +206,45 @@ def validate(model, val_loader, device, metric):
             labels = torch.unsqueeze(batch['label'].to(device), 1)
 
             logits = model(**inputs)
-            # predicted = logits.argmax(dim=1)
             predicted = logits
-            _ = metric(preds=predicted, target=labels)
+            _ = metric(preds=predicted * inputs['mass'],
+                       target=labels * inputs['mass'])
 
     return metric.compute().cpu().numpy()
+
+
+def inference(config):
+    device = config.DEVICE
+    model = MultimodalModel(config).to(device)
+    state_dict = torch.load(config.PTH_PATH, weights_only=True)
+    model.load_state_dict(state_dict)
+    model.eval()
+
+    tokenizer = AutoTokenizer.from_pretrained(config.TEXT_MODEL_NAME)
+    val_transforms = get_transforms(config, ds_type='test')
+    val_dataset = MultimodalDataset(config, val_transforms, ds_type='test')
+    val_loader = DataLoader(val_dataset,
+                            batch_size=config.BATCH_SIZE,
+                            shuffle=False,
+                            collate_fn=partial(collate_fn,
+                                               tokenizer=tokenizer))
+
+    result = {}
+    with torch.no_grad():
+        for batch in tqdm(val_loader):
+
+            inputs = {
+                'input_ids': batch['input_ids'].to(device),
+                'attention_mask': batch['attention_mask'].to(device),
+                'image': batch['image'].to(device),
+                'mass': batch['mass'].to(device),
+            }
+            ids = batch['id']
+            val_true = (batch['label'].cpu() * inputs['mass'].cpu()).numpy()
+            val_pred = (torch.squeeze(model(**inputs), dim=1).cpu() * inputs['mass'].cpu()).numpy()
+
+            for i in range(0, len(ids)):
+                result[ids[i]] = val_true[i], val_pred[i], abs(
+                    val_true[i] - val_pred[i])
+
+    return result

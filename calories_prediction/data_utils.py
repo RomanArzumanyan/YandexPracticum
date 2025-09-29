@@ -11,21 +11,19 @@ from tqdm import tqdm
 from transformers import AutoTokenizer
 
 import albumentations as A
-
-import matplotlib
 import matplotlib.pyplot as plt
-matplotlib.use('QtAgg')
 
 
-def plot_hist(arr: np.ndarray, label: str):
-    plt.title(label)
+def plot_hist(arr: np.ndarray, xlabel: str):
+    plt.ylabel('num dishes')
+    plt.xlabel(xlabel)
     plt.hist(arr, bins=30, color='skyblue', edgecolor='black')
-    plt.show()
+    plt.show(block=False)
 
 
 class MultimodalDataset(Dataset):
 
-    def __init__(self, config, transforms, ds_type="train"):
+    def __init__(self, config, transforms=None, ds_type="train"):
         df = pd.read_csv(config.CSV_PATH)
         self.df = df[df['split'] == ds_type].reset_index()
 
@@ -50,7 +48,7 @@ class MultimodalDataset(Dataset):
 
         return {
             "ingredients": ingredients,
-            "calories": calories,
+            "calories": calories / mass,
             "dish_id": dish_id,
             "image": image,
             "mass": mass,
@@ -62,26 +60,27 @@ class MultimodalDataset(Dataset):
         '''
         num_ingredients = []
         calories = []
-        mass = []
+        calories_norm = []
 
         for i in tqdm(range(0, len(self))):
             entry = self[i]
             num_ingredients.append(len(entry['ingredients'].split(' ')))
-            calories.append(entry['calories'])
-            mass.append(entry['mass'])
+            calories.append(entry['calories'] * entry['mass'])
+            calories_norm.append(entry['calories'])
 
         return {
-            "ingredients": np.asarray(num_ingredients, dtype=np.int32),
-            "calories": np.asarray(calories, dtype=np.float32),
-            "mass": np.asarray(mass, dtype=np.float32)
+            "ingridients num": np.asarray(num_ingredients, dtype=np.int32),
+            "calories / g": np.asarray(calories_norm, dtype=np.float32),
+            "calories": np.asarray(calories, dtype=np.int32),
         }
 
 
 def collate_fn(batch, tokenizer):
     ingredients = [item["ingredients"] for item in batch]
-    calories = torch.LongTensor([item["calories"] for item in batch])
+    calories = torch.FloatTensor([item["calories"] for item in batch])
     images = torch.stack([item["image"] for item in batch])
-    mass = torch.LongTensor([item["mass"] for item in batch])
+    mass = torch.FloatTensor([item["mass"] for item in batch])
+    id = [item["dish_id"] for item in batch]
 
     tokenized_input = tokenizer(ingredients,
                                 return_tensors="pt",
@@ -89,6 +88,7 @@ def collate_fn(batch, tokenizer):
                                 truncation=True)
 
     return {
+        "id": id,
         "mass": mass,
         "label": calories,
         "image": images,
@@ -113,14 +113,6 @@ def get_transforms(config, ds_type="train"):
                          shear=(-10, 10),
                          fill=0,
                          p=0.8),
-                # A.CoarseDropout(
-                #     num_holes_range=(2, 8),
-                #     hole_height_range=(int(0.07 * cfg.input_size[1]),
-                #                        int(0.15 * cfg.input_size[1])),
-                #     hole_width_range=(int(0.1 * cfg.input_size[2]),
-                #                       int(0.15 * cfg.input_size[2])),
-                #     fill=0,
-                #     p=0.5),
                 A.ColorJitter(brightness=0.2,
                               contrast=0.2,
                               saturation=0.2,
